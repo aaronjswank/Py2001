@@ -15,7 +15,7 @@ with np.load(files("Py2001").joinpath("P2001.npz")) as DigitalMapsNpz:
         DigitalMaps[k] = DigitalMapsNpz[k].copy()
 
 
-def bt_loss(d, h, z, GHz, Tpc, Phire, Phirn, Phite, Phitn, Hrg, Htg, Grx, Gtx, FlagVP):
+def bt_loss(d, h, z, GHz, Tpc, Phire, Phirn, Phite, Phitn, Hrg, Htg, Grx, Gtx, FlagVP, epsr=22, sigma=0.003):
     """
     P2001.bt_loss basic transmission loss according to ITU-R P.2001-4
     Lb = P2001.bt_loss(d, h, z, GHz, Tpc, Phire, Phirn, Phite, Phitn, Hrg, Htg, Grx, Gtx, FlagVP)
@@ -49,6 +49,9 @@ def bt_loss(d, h, z, GHz, Tpc, Phire, Phirn, Phite, Phitn, Hrg, Htg, Grx, Gtx, F
     Grx         dBi   float   T.2.2.1     Receiving antenna gain in the direction of the ray to the transmitting antenna
     Gtx         dBi   float   T.2.2.1     Transmitting antenna gain in the direction of the ray to the receiving antenna
     FlagVp            int     T.2.2.1     Polarisation: 1 = vertical; 0 = horizontal
+
+      epsr    -   Relative permittivity
+      sigma   -   Conductivity (S/m)
 
     Output parameters:
     Lb     -   basic  transmission loss according to ITU-R P.2001-4
@@ -243,7 +246,7 @@ def bt_loss(d, h, z, GHz, Tpc, Phire, Phirn, Phite, Phitn, Hrg, Htg, Grx, Gtx, F
     # Calculate the diffraction loss not exceeded for p% time, as described in
     # Attachment A
 
-    Ld_pol, _, _, _, _, _, _, _ = dl_p(d, h, Hts, Hrs, Htep, Hrep, GHz, omega, Reffp, Cp)
+    Ld_pol, _, _, _, _, _, _, _ = dl_p(d, h, Hts, Hrs, Htep, Hrep, GHz, omega, Reffp, Cp, epsr, sigma)
 
     Ld = Ld_pol[FlagVP]
 
@@ -2244,7 +2247,7 @@ def dl_bull_actual(d, h, hts, hrs, Cp, f):
     return Ldba, Ldbka, FlagLospa
 
 
-def dl_se(d, hte, hre, ap, f, omega):
+def dl_se(d, hte, hre, ap, f, omega, epsr=22, sigma=0.003):
     """dl_se spherical-Earth diffraction loss exceeded for p% time according to ITU-R P.2001-4
     This function computes the Spherical-Earth diffraction loss not exceeded
     for p% time for antenna heights hte and hre (m)
@@ -2257,6 +2260,9 @@ def dl_se(d, hte, hre, ap, f, omega):
       ap      -   the effective Earth radius in kilometers
       f       -   Frequency (GHz)
       omega   -   the fraction of the path over sea
+
+      epsr    -   Relative permittivity
+      sigma   -   Conductivity (S/m)
 
       Output parameters:
       Ldsph   -   The spherical-Earth diffraction loss not exceeded for p% time
@@ -2283,7 +2289,7 @@ def dl_se(d, hte, hre, ap, f, omega):
         # calculate diffraction loss Ldft using the method in Sec. A.3 for
         # adft = ap and set Ldsph to Ldft
 
-        Ldsph = dl_se_ft(d, hte, hre, ap, f, omega)
+        Ldsph = dl_se_ft(d, hte, hre, ap, f, omega, epsr, sigma)
         return Ldsph
     else:
         # calculate the smallest clearance between the curved-Earth path and
@@ -2314,7 +2320,7 @@ def dl_se(d, hte, hre, ap, f, omega):
 
             # Use the method in Sec. A3 for adft = aem to obtain Ldft
 
-            Ldft = dl_se_ft(d, hte, hre, aem, f, omega)
+            Ldft = dl_se_ft(d, hte, hre, aem, f, omega, epsr, sigma)
 
             Ldsph[0] = 0 if Ldft[0] < 0 else (1 - hse / hreq) * Ldft[0]  # Eq (A.2.5)
             Ldsph[1] = 0 if Ldft[1] < 0 else (1 - hse / hreq) * Ldft[1]  # Eq (A.2.5)
@@ -2322,7 +2328,7 @@ def dl_se(d, hte, hre, ap, f, omega):
     return Ldsph
 
 
-def dl_se_ft(d, hte, hre, adft, f, omega):
+def dl_se_ft(d, hte, hre, adft, f, omega, epsr=22, sigma=0.003):
     """dl_se_ft First-term part of spherical-Earth diffraction according to ITU-R P.2001-4
     This function computes the first-term part of Spherical-Earth diffraction
     as defined in Sec. A.3 of the ITU-R P.2001-4
@@ -2335,13 +2341,16 @@ def dl_se_ft(d, hte, hre, adft, f, omega):
       f       -   Frequency (GHz)
       omega   -   fraction of the path over sea
 
+      epsr    -   Relative permittivity
+      sigma   -   Conductivity (S/m)
+
       Output parameters:
       Ldft   -   The first-term spherical-Earth diffraction loss not exceeded for p% time
                  Ldft(1) is for the horizontal polarization
                  Ldft(2) is for the vertical polarization
 
       Example:
-      Ldft = dl_se_ft(d, hte, hre, adft, f, omega)
+      Ldft = dl_se_ft(d, hte, hre, adft, f, omega, epsr, sigma)
 
       Rev   Date        Author                          Description
       -------------------------------------------------------------------------------
@@ -2355,7 +2364,12 @@ def dl_se_ft(d, hte, hre, adft, f, omega):
 
     # First-term part of the spherical-Earth diffraction loss over land
 
-    Ldft_land = dl_se_ft_inner(22, 0.003, d, hte, hre, adft, f)
+    # Ldft_land = dl_se_ft_inner(22, 0.003, d, hte, hre, adft, f)
+    # Ldft_land_default = dl_se_ft_inner(22, 0.003, d, hte, hre, adft, f)
+    Ldft_land = dl_se_ft_inner(epsr, sigma, d, hte, hre, adft, f)
+
+    # print(f'{Ldft_land=}, {epsr=}, {sigma=}')
+    # print(f'{Ldft_land_default=}, epsr=22, sigma=0.003')
 
     # First-term part of the spherical-Earth diffraction loss over sea
 
@@ -2457,7 +2471,7 @@ def dl_se_ft_inner(epsr, sigma, d, hte, hre, adft, f):
     return Ldft
 
 
-def dl_p(d, h, hts, hrs, hte, hre, f, omega, ap, Cp):
+def dl_p(d, h, hts, hrs, hte, hre, f, omega, ap, Cp, epsr, sigma):
     """dl_p Diffraction loss model not exceeded for p% of time according to P.2001-4
     [Ld, Ldsph, Ldba, Ldbs, Ldbka, Ldbks] = dl_p( d, h, hts, hrs, hte, hre, f, omega, ap, Cp )
 
@@ -2478,6 +2492,9 @@ def dl_p(d, h, hts, hrs, hte, hre, f, omega, ap, Cp):
       ap      -   Effective Earth radius (km)
       Cp      -   Effective Earth curvature
 
+      epsr    -   Relative permittivity
+      sigma   -   Conductivity (S/m)
+
       Output parameters:
       Ldp    -   diffraction loss for the general path not exceeded for p%  of the time
                  according to Attachment A of ITU-R P.2001-4.
@@ -2492,7 +2509,7 @@ def dl_p(d, h, hts, hrs, hte, hre, f, omega, ap, Cp):
       FlagLosps - 1 = LoS p% time for smooth path, 0 = otherwise
 
       Example:
-      [Ld, Ldsph, Ldba, Ldbs, Ldbka, Ldbks, FlagLospa, FlagLosps] = dl_p( d, h, hts, hrs, hte, hre, f, omega, ap, Cp )
+      [Ld, Ldsph, Ldba, Ldbs, Ldbka, Ldbks, FlagLospa, FlagLosps] = dl_p( d, h, hts, hrs, hte, hre, f, omega, ap, Cp, epsr, sigma )
 
 
       Rev   Date        Author                          Description
@@ -2503,7 +2520,7 @@ def dl_p(d, h, hts, hrs, hte, hre, f, omega, ap, Cp):
 
     dtot = d[-1]
 
-    Ldsph = dl_se(dtot, hte, hre, ap, f, omega)
+    Ldsph = dl_se(dtot, hte, hre, ap, f, omega, epsr, sigma)
 
     Ldba, Ldbka, FlagLospa = dl_bull_actual(d, h, hts, hrs, Cp, f)
 
